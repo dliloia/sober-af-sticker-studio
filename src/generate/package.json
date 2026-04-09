@@ -1,0 +1,11 @@
+{
+  "name": "soberaf-sticker-generate",
+  "version": "1.0.0",
+  "description": "SoberAF Sticker Studio - Image generation Lambda function",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  }
+}

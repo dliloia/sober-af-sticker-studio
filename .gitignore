@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables - NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# AWS
+.aws-sam/
+samconfig.toml
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lambda deployment packages
+*.zip
+
+# Temporary files
+tmp/
+temp/

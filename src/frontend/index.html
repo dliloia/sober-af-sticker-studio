@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SoberAF Sticker Studio</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #ffffff;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 2rem;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+    }
+
+    .header p {
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Prompt Section */
+    .prompt-section {
+      background: #1a1a2e;
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .prompt-section h2 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: #667eea;
+    }
+
+    .prompt-form {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .prompt-input {
+      flex: 1;
+      padding: 1rem 1.5rem;
+      font-size: 1.1rem;
+      border: 2px solid #333;
+      border-radius: 12px;
+      background: #16213e;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    .prompt-input:focus {
+      border-color: #667eea;
+    }
+
+    .prompt-input::placeholder {
+      color: #666;
+    }
+
+    .generate-btn {
+      padding: 1rem 2rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      cursor: pointer;
+      transition: transform 0.2s, opacity 0.2s;
+      white-space: nowrap;
+    }
+
+    .generate-btn:hover {
+      transform: translateY(-2px);
+      opacity: 0.9;
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Status Messages */
+    .status {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .status.active {
+      display: block;
+    }
+
+    .status.loading {
+      background: #1e3a5f;
+      color: #7ec8e3;
+    }
+
+    .status.success {
+      background: #1e3f2e;
+      color: #7ee3a0;
+    }
+
+    .status.error {
+      background: #3f1e1e;
+      color: #e37e7e;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #7ec8e3;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Gallery Section */
+    .gallery-section {
+      margin-top: 2rem;
+    }
+
+    .gallery-section h2 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      color: #667eea;
+    }
+
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .design-card {
+      background: #1a1a2e;
+      border-radius: 16px;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+
+    .design-card:hover {
+      transform: translateY(-4px);
+    }
+
+    .design-card img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+    }
+
+    .design-card .card-body {
+      padding: 1.25rem;
+    }
+
+    .design-card .prompt-text {
+      font-size: 0.95rem;
+      color: #ccc;
+      margin-bottom: 0.75rem;
+      font-style: italic;
+    }
+
+    .design-card .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .status-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .status-badge.raw {
+      background: #3d2e00;
+      color: #ffd700;
+    }
+
+    .status-badge.processed {
+      background: #1e3f2e;
+      color: #7ee3a0;
+    }
+
+    .download-links {
+      margin-top: 0.75rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .download-links a {
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      background: #667eea22;
+      color: #667eea;
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .download-links a:hover {
+      background: #667eea44;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #666;
+    }
+
+    .empty-state p {
+      font-size: 1.1rem;
+    }
+
+    /* Style Prefix Preview */
+    .style-note {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .style-note code {
+      background: #16213e;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      color: #667eea;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>SoberAF Sticker Studio</h1>
+    <p>AI-powered sticker design pipeline for SoberAFStickers.com</p>
+  </div>
+
+  <div class="container">
+    <!-- Prompt Submission -->
+    <div class="prompt-section">
+      <h2>Generate a New Design</h2>
+      <div class="prompt-form">
+        <input
+          type="text"
+          class="prompt-input"
+          id="promptInput"
+          placeholder="Describe your sticker idea... e.g., a happy cartoon frog celebrating 1 year sober"
+          maxlength="500"
+        />
+        <button class="generate-btn" id="generateBtn" onclick="generateDesign()">
+          Generate
+        </button>
+      </div>
+      <p class="style-note">
+        Your prompt is automatically styled with the SoberAF house style for brand consistency.
+      </p>
+      <div class="status" id="statusMessage"></div>
+    </div>
+
+    <!-- Design Gallery -->
+    <div class="gallery-section">
+      <h2>My Designs</h2>
+      <div class="gallery-grid" id="galleryGrid">
+        <div class="empty-state">
+          <p>No designs yet. Generate your first sticker above!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // CONFIGURATION — Update this after deploying API Gateway
+    // ============================================================
+    const API_BASE_URL = 'YOUR_API_GATEWAY_URL'; // e.g., https://abc123.execute-api.us-east-1.amazonaws.com/prod
+    const PROCESSED_BUCKET_URL = 'YOUR_PROCESSED_BUCKET_URL'; // e.g., https://soberaf-processed.s3.amazonaws.com
+
+    // ============================================================
+    // Generate a new sticker design
+    // ============================================================
+    async function generateDesign() {
+      const input = document.getElementById('promptInput');
+      const btn = document.getElementById('generateBtn');
+      const prompt = input.value.trim();
+
+      if (!prompt) {
+        showStatus('Please enter a sticker idea!', 'error');
+        return;
+      }
+
+      // Disable inputs during generation
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+      showStatus('<span class="spinner"></span> Generating your sticker design... This may take 15-30 seconds.', 'loading');
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: prompt }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Generation failed');
+        }
+
+        showStatus(`Design generated successfully! Design ID: ${data.designId}`, 'success');
+        input.value = '';
+
+        // Refresh the gallery after a short delay to allow processing
+        setTimeout(loadGallery, 3000);
+
+      } catch (error) {
+        showStatus(`Error: ${error.message}`, 'error');
+        console.error('Generation error:', error);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+      }
+    }
+
+    // ============================================================
+    // Load and display the design gallery
+    // ============================================================
+    async function loadGallery() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/designs`);
+        const data = await response.json();
+
+        const grid = document.getElementById('galleryGrid');
+
+        if (!data.designs || data.designs.length === 0) {
+          grid.innerHTML = '<div class="empty-state"><p>No designs yet. Generate your first sticker above!</p></div>';
+          return;
+        }
+
+        grid.innerHTML = data.designs.map(design => `
+          <div class="design-card">
+            <img src="${getImageUrl(design)}" alt="${design.userPrompt}" loading="lazy" />
+            <div class="card-body">
+              <p class="prompt-text">"${design.userPrompt}"</p>
+              <div class="card-meta">
+                <span>${formatDate(design.createdAt)}</span>
+                <span class="status-badge ${design.status}">${design.status}</span>
+              </div>
+              ${design.status === 'processed' ? `
+                <div class="download-links">
+                  <a href="${PROCESSED_BUCKET_URL}/${design.designId}/small.png" target="_blank">2x2"</a>
+                  <a href="${PROCESSED_BUCKET_URL}/${design.designId}/medium.png" target="_blank">3x3"</a>
+                  <a href="${PROCESSED_BUCKET_URL}/${design.designId}/large.png" target="_blank">4x4"</a>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `).join('');
+
+      } catch (error) {
+        console.error('Failed to load gallery:', error);
+      }
+    }
+
+    // ============================================================
+    // Helper functions
+    // ============================================================
+    function getImageUrl(design) {
+      if (design.status === 'processed' && design.processedKeys) {
+        return `${PROCESSED_BUCKET_URL}/${design.processedKeys.medium || design.processedKeys.small}`;
+      }
+      // Fallback to raw image
+      return `${PROCESSED_BUCKET_URL}/../raw/${design.rawKey}`;
+    }
+
+    function formatDate(isoString) {
+      return new Date(isoString).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+
+    function showStatus(message, type) {
+      const el = document.getElementById('statusMessage');
+      el.innerHTML = message;
+      el.className = `status active ${type}`;
+    }
+
+    // Allow Enter key to submit
+    document.getElementById('promptInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') generateDesign();
+    });
+
+    // Load gallery on page load
+    loadGallery();
+  </script>
+</body>
+</html>

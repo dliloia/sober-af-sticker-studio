@@ -1,0 +1,375 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SoberAF Sticker Studio - AI-powered sticker design pipeline.
+  Generates sticker designs using DALL-E, processes them into multiple
+  print-ready sizes, and serves a gallery frontend from S3.
+
+# ============================================================
+# Parameters
+# ============================================================
+Parameters:
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAI API key for DALL-E image generation
+
+  ProjectName:
+    Type: String
+    Default: soberaf-sticker-studio
+    Description: Base name for all resources
+
+# ============================================================
+# Global settings for all Lambda functions
+# ============================================================
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 60
+    MemorySize: 512
+    Environment:
+      Variables:
+        METADATA_TABLE: !Ref MetadataTable
+        RAW_BUCKET: !Ref RawImageBucket
+        PROCESSED_BUCKET: !Ref ProcessedImageBucket
+
+# ============================================================
+# Resources
+# ============================================================
+Resources:
+
+  # ----------------------------------------------------------
+  # S3 Buckets
+  # ----------------------------------------------------------
+
+  # Stores raw images directly from DALL-E
+  RawImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-raw-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # Stores processed/resized sticker images
+  ProcessedImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-processed-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # Policy to allow public read on processed images
+  ProcessedBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProcessedImageBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${ProcessedImageBucket.Arn}/*'
+
+  # Hosts the static frontend website
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  # ----------------------------------------------------------
+  # DynamoDB Table
+  # ----------------------------------------------------------
+  MetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-designs'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: designId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: designId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ----------------------------------------------------------
+  # IAM Roles (Least Privilege)
+  # ----------------------------------------------------------
+
+  # Role for the Generate Lambda
+  GenerateFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-generate-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: GenerateFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteToRawBucket
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${RawImageBucket.Arn}/*'
+              - Sid: WriteToDynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt MetadataTable.Arn
+
+  # Role for the Process Lambda
+  ProcessFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-process-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ProcessFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadFromRawBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub '${RawImageBucket.Arn}/*'
+              - Sid: WriteToProcessedBucket
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${ProcessedImageBucket.Arn}/*'
+              - Sid: UpdateDynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt MetadataTable.Arn
+
+  # Role for the List Designs Lambda
+  ListDesignsFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-list-designs-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ListDesignsFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadFromDynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                Resource: !GetAtt MetadataTable.Arn
+
+  # ----------------------------------------------------------
+  # Lambda Functions
+  # ----------------------------------------------------------
+
+  GenerateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-generate'
+      Handler: index.handler
+      CodeUri: ../src/generate/
+      Role: !GetAtt GenerateFunctionRole.Arn
+      Timeout: 90
+      MemorySize: 512
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref OpenAIApiKey
+          RAW_BUCKET: !Ref RawImageBucket
+          METADATA_TABLE: !Ref MetadataTable
+      Events:
+        ApiPost:
+          Type: Api
+          Properties:
+            Path: /generate
+            Method: post
+            RestApiId: !Ref StickerApi
+
+  ProcessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-process'
+      Handler: index.handler
+      CodeUri: ../src/process/
+      Role: !GetAtt ProcessFunctionRole.Arn
+      Timeout: 120
+      MemorySize: 1024
+      Environment:
+        Variables:
+          PROCESSED_BUCKET: !Ref ProcessedImageBucket
+          METADATA_TABLE: !Ref MetadataTable
+      Events:
+        S3Trigger:
+          Type: S3
+          Properties:
+            Bucket: !Ref RawImageBucket
+            Events: s3:ObjectCreated:*
+
+  ListDesignsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-list-designs'
+      Handler: listDesigns.handler
+      CodeUri: ../src/generate/
+      Role: !GetAtt ListDesignsFunctionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          METADATA_TABLE: !Ref MetadataTable
+      Events:
+        ApiGet:
+          Type: Api
+          Properties:
+            Path: /designs
+            Method: get
+            RestApiId: !Ref StickerApi
+
+  # ----------------------------------------------------------
+  # API Gateway
+  # ----------------------------------------------------------
+  StickerApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub '${ProjectName}-api'
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  # ----------------------------------------------------------
+  # CloudWatch Alarms
+  # ----------------------------------------------------------
+
+  GenerateErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-generate-errors'
+      AlarmDescription: Alarm when the Generate Lambda has errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref GenerateFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ProcessErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-process-errors'
+      AlarmDescription: Alarm when the Process Lambda has errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ProcessFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+# ============================================================
+# Outputs
+# ============================================================
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${StickerApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+
+  FrontendUrl:
+    Description: Frontend website URL
+    Value: !GetAtt FrontendBucket.WebsiteURL
+
+  RawBucketName:
+    Description: Raw image S3 bucket name
+    Value: !Ref RawImageBucket
+
+  ProcessedBucketName:
+    Description: Processed image S3 bucket name
+    Value: !Ref ProcessedImageBucket
+
+  FrontendBucketName:
+    Description: Frontend S3 bucket name
+    Value: !Ref FrontendBucket
+
+  DynamoTableName:
+    Description: DynamoDB table name
+    Value: !Ref MetadataTable
