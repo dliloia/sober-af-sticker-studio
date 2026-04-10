@@ -57,11 +57,20 @@
 
     .prompt-form {
       display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .prompt-form .input-row {
+      display: flex;
       gap: 1rem;
     }
 
-    .prompt-input {
+    .prompt-form .input-row > .prompt-input {
       flex: 1;
+    }
+
+    .prompt-input {
       padding: 1rem 1.5rem;
       font-size: 1.1rem;
       border: 2px solid #333;
@@ -70,6 +79,7 @@
       color: #fff;
       outline: none;
       transition: border-color 0.3s;
+      width: 100%;
     }
 
     .prompt-input:focus {
@@ -78,6 +88,25 @@
 
     .prompt-input::placeholder {
       color: #666;
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+      margin-bottom: 0.35rem;
+      font-weight: 600;
+    }
+
+    .text-field-wrapper {
+      width: 100%;
+    }
+
+    .text-field-wrapper .prompt-input {
+      font-size: 1rem;
+      padding: 0.85rem 1.25rem;
     }
 
     .generate-btn {
@@ -102,6 +131,37 @@
       opacity: 0.5;
       cursor: not-allowed;
       transform: none;
+    }
+
+    /* Editing indicator */
+    .editing-indicator {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding: 0.5rem 1rem;
+      background: #2a1a4e;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #b39ddb;
+    }
+
+    .editing-indicator.active {
+      display: flex;
+    }
+
+    .editing-indicator .cancel-edit {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: #e37e7e;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .editing-indicator .cancel-edit:hover {
+      color: #ff9999;
     }
 
     /* Status Messages */
@@ -152,10 +212,32 @@
       margin-top: 2rem;
     }
 
-    .gallery-section h2 {
-      font-size: 1.5rem;
+    .gallery-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 1.5rem;
+    }
+
+    .gallery-header h2 {
+      font-size: 1.5rem;
       color: #667eea;
+    }
+
+    .refresh-btn {
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: 1px solid #667eea;
+      border-radius: 8px;
+      background: transparent;
+      color: #667eea;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .refresh-btn:hover {
+      background: #667eea22;
     }
 
     .gallery-grid {
@@ -178,7 +260,17 @@
     .design-card img {
       width: 100%;
       height: 300px;
-      object-fit: cover;
+      object-fit: contain;
+      cursor: pointer;
+      /* Checkered background so transparent die-cut areas are visible */
+      background-color: #2a2a3e;
+      background-image:
+        linear-gradient(45deg, #1f1f33 25%, transparent 25%),
+        linear-gradient(-45deg, #1f1f33 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1f1f33 75%),
+        linear-gradient(-45deg, transparent 75%, #1f1f33 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
     }
 
     .design-card .card-body {
@@ -215,6 +307,62 @@
     .status-badge.processed {
       background: #1e3f2e;
       color: #7ee3a0;
+    }
+
+    /* Card action buttons */
+    .card-actions {
+      margin-top: 0.75rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .card-actions button {
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .card-actions button:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-regenerate {
+      background: #764ba2;
+      color: white;
+    }
+
+    .btn-regenerate:hover {
+      background: #8b5fbf;
+    }
+
+    .btn-edit {
+      background: #667eea33;
+      color: #667eea;
+    }
+
+    .btn-edit:hover {
+      background: #667eea55;
+    }
+
+    .btn-delete {
+      background: #c02c2c33;
+      color: #ff8a8a;
+      margin-left: auto;
+    }
+
+    .btn-delete:hover {
+      background: #c02c2c66;
+      color: #ffb3b3;
+    }
+
+    .btn-delete:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .download-links {
@@ -256,11 +404,29 @@
       color: #888;
     }
 
-    .style-note code {
-      background: #16213e;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      color: #667eea;
+    /* Image modal for full-size preview */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-overlay img {
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 8px;
     }
   </style>
 </head>
@@ -273,18 +439,37 @@
   <div class="container">
     <!-- Prompt Submission -->
     <div class="prompt-section">
-      <h2>Generate a New Design</h2>
+      <h2 id="promptSectionTitle">Generate a New Design</h2>
       <div class="prompt-form">
-        <input
-          type="text"
-          class="prompt-input"
-          id="promptInput"
-          placeholder="Describe your sticker idea... e.g., a happy cartoon frog celebrating 1 year sober"
-          maxlength="500"
-        />
-        <button class="generate-btn" id="generateBtn" onclick="generateDesign()">
-          Generate
-        </button>
+        <div>
+          <label class="input-label" for="promptInput">Sticker concept</label>
+          <div class="input-row">
+            <input
+              type="text"
+              class="prompt-input"
+              id="promptInput"
+              placeholder="Describe your sticker idea... e.g., skull surrounded by roses and geometric mandala patterns"
+              maxlength="500"
+            />
+            <button class="generate-btn" id="generateBtn" onclick="generateDesign()">
+              Generate
+            </button>
+          </div>
+        </div>
+        <div class="text-field-wrapper">
+          <label class="input-label" for="textInput">Text on sticker <span style="text-transform:none; color:#666; font-weight:400;">(optional)</span></label>
+          <input
+            type="text"
+            class="prompt-input"
+            id="textInput"
+            placeholder="e.g., Rule 62  •  One Day At A Time  •  Outlaw Safe Cracker"
+            maxlength="100"
+          />
+        </div>
+      </div>
+      <div class="editing-indicator" id="editingIndicator">
+        <span>Editing prompt from a previous design. Modify and hit Generate to create a new version.</span>
+        <button class="cancel-edit" onclick="cancelEdit()">Cancel</button>
       </div>
       <p class="style-note">
         Your prompt is automatically styled with the SoberAF house style for brand consistency.
@@ -294,7 +479,10 @@
 
     <!-- Design Gallery -->
     <div class="gallery-section">
-      <h2>My Designs</h2>
+      <div class="gallery-header">
+        <h2>My Designs</h2>
+        <button class="refresh-btn" onclick="loadGallery()">Refresh Gallery</button>
+      </div>
       <div class="gallery-grid" id="galleryGrid">
         <div class="empty-state">
           <p>No designs yet. Generate your first sticker above!</p>
@@ -303,27 +491,33 @@
     </div>
   </div>
 
+  <!-- Full-size image modal -->
+  <div class="modal-overlay" id="imageModal" onclick="closeModal()">
+    <img id="modalImage" src="" alt="Full size preview" />
+  </div>
+
   <script>
     // ============================================================
-    // CONFIGURATION — Update this after deploying API Gateway
+    // CONFIGURATION
     // ============================================================
-    const API_BASE_URL = 'YOUR_API_GATEWAY_URL'; // e.g., https://abc123.execute-api.us-east-1.amazonaws.com/prod
-    const PROCESSED_BUCKET_URL = 'YOUR_PROCESSED_BUCKET_URL'; // e.g., https://soberaf-processed.s3.amazonaws.com
+    const API_BASE_URL = 'https://vahvak75r1.execute-api.us-east-1.amazonaws.com/prod';
+    const PROCESSED_BUCKET_URL = 'https://soberaf-sticker-studio-processed-118550023629.s3.amazonaws.com';
 
     // ============================================================
     // Generate a new sticker design
     // ============================================================
     async function generateDesign() {
       const input = document.getElementById('promptInput');
+      const textInput = document.getElementById('textInput');
       const btn = document.getElementById('generateBtn');
       const prompt = input.value.trim();
+      const text = textInput.value.trim();
 
       if (!prompt) {
         showStatus('Please enter a sticker idea!', 'error');
         return;
       }
 
-      // Disable inputs during generation
       btn.disabled = true;
       btn.textContent = 'Generating...';
       showStatus('<span class="spinner"></span> Generating your sticker design... This may take 15-30 seconds.', 'loading');
@@ -332,7 +526,7 @@
         const response = await fetch(`${API_BASE_URL}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: prompt }),
+          body: JSON.stringify({ prompt: prompt, text: text }),
         });
 
         const data = await response.json();
@@ -343,6 +537,8 @@
 
         showStatus(`Design generated successfully! Design ID: ${data.designId}`, 'success');
         input.value = '';
+        textInput.value = '';
+        cancelEdit();
 
         // Refresh the gallery after a short delay to allow processing
         setTimeout(loadGallery, 3000);
@@ -353,6 +549,114 @@
       } finally {
         btn.disabled = false;
         btn.textContent = 'Generate';
+      }
+    }
+
+    // ============================================================
+    // Regenerate — re-run the exact same prompt
+    // ============================================================
+    async function regenerateDesign(prompt, text) {
+      const input = document.getElementById('promptInput');
+      const textInput = document.getElementById('textInput');
+      const btn = document.getElementById('generateBtn');
+
+      input.value = prompt;
+      textInput.value = text || '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      btn.disabled = true;
+      btn.textContent = 'Regenerating...';
+      showStatus('<span class="spinner"></span> Regenerating with the same prompt... This may take 15-30 seconds.', 'loading');
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: prompt, text: text || '' }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Regeneration failed');
+        }
+
+        showStatus(`New version generated! Design ID: ${data.designId}`, 'success');
+        input.value = '';
+        textInput.value = '';
+
+        setTimeout(loadGallery, 3000);
+
+      } catch (error) {
+        showStatus(`Error: ${error.message}`, 'error');
+        console.error('Regeneration error:', error);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+      }
+    }
+
+    // ============================================================
+    // Edit — load the prompt and text into the inputs for modification
+    // ============================================================
+    function editPrompt(prompt, text) {
+      const input = document.getElementById('promptInput');
+      const textInput = document.getElementById('textInput');
+      input.value = prompt;
+      textInput.value = text || '';
+      input.focus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      document.getElementById('editingIndicator').classList.add('active');
+      document.getElementById('promptSectionTitle').textContent = 'Edit & Regenerate';
+    }
+
+    function cancelEdit() {
+      document.getElementById('editingIndicator').classList.remove('active');
+      document.getElementById('promptSectionTitle').textContent = 'Generate a New Design';
+    }
+
+    // ============================================================
+    // Delete a design — removes raw + processed images + metadata
+    // ============================================================
+    async function deleteDesign(designId, buttonEl) {
+      if (!confirm('Delete this design? This will permanently remove the image and all its processed sizes.')) {
+        return;
+      }
+
+      // Find the card and fade it out so the user gets immediate feedback.
+      const card = buttonEl.closest('.design-card');
+      if (card) {
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+      }
+      buttonEl.disabled = true;
+      buttonEl.textContent = 'Deleting...';
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/designs/${encodeURIComponent(designId)}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `Delete failed (${response.status})`);
+        }
+
+        // Remove the card from the DOM and reload the gallery to stay in sync.
+        if (card) card.remove();
+        showStatus('Design deleted.', 'success');
+        setTimeout(loadGallery, 500);
+
+      } catch (error) {
+        console.error('Delete error:', error);
+        showStatus(`Error deleting: ${error.message}`, 'error');
+        if (card) {
+          card.style.opacity = '1';
+          card.style.pointerEvents = 'auto';
+        }
+        buttonEl.disabled = false;
+        buttonEl.textContent = 'Delete';
       }
     }
 
@@ -371,14 +675,32 @@
           return;
         }
 
-        grid.innerHTML = data.designs.map(design => `
+        grid.innerHTML = data.designs.map(design => {
+          const stickerText = design.stickerText || '';
+          const escapedPrompt = escapeForAttr(design.userPrompt);
+          const escapedText = escapeForAttr(stickerText);
+
+          return `
           <div class="design-card">
-            <img src="${getImageUrl(design)}" alt="${design.userPrompt}" loading="lazy" />
+            <img src="${getImageUrl(design)}" alt="${design.userPrompt}"
+                 loading="lazy" onclick="openModal('${getImageUrl(design)}')" />
             <div class="card-body">
               <p class="prompt-text">"${design.userPrompt}"</p>
+              ${stickerText ? `<p class="prompt-text" style="color:#b39ddb;">Text: "${stickerText}"</p>` : ''}
               <div class="card-meta">
                 <span>${formatDate(design.createdAt)}</span>
                 <span class="status-badge ${design.status}">${design.status}</span>
+              </div>
+              <div class="card-actions">
+                <button class="btn-regenerate" onclick="regenerateDesign('${escapedPrompt}', '${escapedText}')">
+                  Regenerate
+                </button>
+                <button class="btn-edit" onclick="editPrompt('${escapedPrompt}', '${escapedText}')">
+                  Edit Prompt
+                </button>
+                <button class="btn-delete" onclick="deleteDesign('${design.designId}', this)">
+                  Delete
+                </button>
               </div>
               ${design.status === 'processed' ? `
                 <div class="download-links">
@@ -389,7 +711,7 @@
               ` : ''}
             </div>
           </div>
-        `).join('');
+        `}).join('');
 
       } catch (error) {
         console.error('Failed to load gallery:', error);
@@ -397,13 +719,38 @@
     }
 
     // ============================================================
+    // Image modal
+    // ============================================================
+    function openModal(imageUrl) {
+      document.getElementById('modalImage').src = imageUrl;
+      document.getElementById('imageModal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('imageModal').classList.remove('active');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // ============================================================
     // Helper functions
     // ============================================================
+    // Escapes a string so it can be safely dropped into an HTML attribute
+    // that uses single quotes, including via an onclick handler.
+    function escapeForAttr(str) {
+      return (str || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/\n/g, ' ');
+    }
+
     function getImageUrl(design) {
       if (design.status === 'processed' && design.processedKeys) {
         return `${PROCESSED_BUCKET_URL}/${design.processedKeys.medium || design.processedKeys.small}`;
       }
-      // Fallback to raw image
       return `${PROCESSED_BUCKET_URL}/../raw/${design.rawKey}`;
     }
 

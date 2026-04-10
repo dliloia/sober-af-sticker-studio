@@ -24,14 +24,8 @@ Parameters:
 # ============================================================
 Globals:
   Function:
-    Runtime: nodejs20.x
     Timeout: 60
     MemorySize: 512
-    Environment:
-      Variables:
-        METADATA_TABLE: !Ref MetadataTable
-        RAW_BUCKET: !Ref RawImageBucket
-        PROCESSED_BUCKET: !Ref ProcessedImageBucket
 
 # ============================================================
 # Resources
@@ -43,8 +37,10 @@ Resources:
   # ----------------------------------------------------------
 
   # Stores raw images directly from DALL-E
+  # NotificationConfiguration wires S3 → Process Lambda (defined separately to avoid circular dependency)
   RawImageBucket:
     Type: AWS::S3::Bucket
+    DependsOn: ProcessFunctionS3Permission
     Properties:
       BucketName: !Sub '${ProjectName}-raw-${AWS::AccountId}'
       PublicAccessBlockConfiguration:
@@ -56,6 +52,10 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt ProcessFunction.Arn
 
   # Stores processed/resized sticker images
   ProcessedImageBucket:
@@ -162,7 +162,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - s3:PutObject
-                Resource: !Sub '${RawImageBucket.Arn}/*'
+                Resource: !Sub 'arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}/*'
               - Sid: WriteToDynamoDB
                 Effect: Allow
                 Action:
@@ -192,7 +192,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: !Sub '${RawImageBucket.Arn}/*'
+                Resource: !Sub 'arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}/*'
               - Sid: WriteToProcessedBucket
                 Effect: Allow
                 Action:
@@ -202,6 +202,48 @@ Resources:
                 Effect: Allow
                 Action:
                   - dynamodb:UpdateItem
+                Resource: !GetAtt MetadataTable.Arn
+
+  # Role for the Delete Design Lambda
+  DeleteFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-delete-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DeleteFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DeleteFromRawBucket
+                Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}'
+                  - !Sub 'arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}/*'
+              - Sid: DeleteFromProcessedBucket
+                Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ProcessedImageBucket.Arn
+                  - !Sub '${ProcessedImageBucket.Arn}/*'
+              - Sid: DeleteFromDynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:DeleteItem
                 Resource: !GetAtt MetadataTable.Arn
 
   # Role for the List Designs Lambda
@@ -237,6 +279,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub '${ProjectName}-generate'
+      Runtime: nodejs20.x
       Handler: index.handler
       CodeUri: ../src/generate/
       Role: !GetAtt GenerateFunctionRole.Arn
@@ -245,7 +288,7 @@ Resources:
       Environment:
         Variables:
           OPENAI_API_KEY: !Ref OpenAIApiKey
-          RAW_BUCKET: !Ref RawImageBucket
+          RAW_BUCKET: !Sub '${ProjectName}-raw-${AWS::AccountId}'
           METADATA_TABLE: !Ref MetadataTable
       Events:
         ApiPost:
@@ -258,27 +301,33 @@ Resources:
   ProcessFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub '${ProjectName}-process'
-      Handler: index.handler
-      CodeUri: ../src/process/
+      PackageType: Image
       Role: !GetAtt ProcessFunctionRole.Arn
-      Timeout: 120
-      MemorySize: 1024
+      Timeout: 300
+      MemorySize: 3008
       Environment:
         Variables:
           PROCESSED_BUCKET: !Ref ProcessedImageBucket
           METADATA_TABLE: !Ref MetadataTable
-      Events:
-        S3Trigger:
-          Type: S3
-          Properties:
-            Bucket: !Ref RawImageBucket
-            Events: s3:ObjectCreated:*
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ../src/process
+      DockerTag: latest
+  # Permission for S3 to invoke the Process Lambda
+  ProcessFunctionS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ProcessFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}'
 
   ListDesignsFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub '${ProjectName}-list-designs'
+      Runtime: nodejs20.x
       Handler: listDesigns.handler
       CodeUri: ../src/generate/
       Role: !GetAtt ListDesignsFunctionRole.Arn
@@ -295,6 +344,29 @@ Resources:
             Method: get
             RestApiId: !Ref StickerApi
 
+  DeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-delete'
+      Runtime: nodejs20.x
+      Handler: deleteDesign.handler
+      CodeUri: ../src/generate/
+      Role: !GetAtt DeleteFunctionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          RAW_BUCKET: !Sub '${ProjectName}-raw-${AWS::AccountId}'
+          PROCESSED_BUCKET: !Ref ProcessedImageBucket
+          METADATA_TABLE: !Ref MetadataTable
+      Events:
+        ApiDelete:
+          Type: Api
+          Properties:
+            Path: /designs/{designId}
+            Method: delete
+            RestApiId: !Ref StickerApi
+
   # ----------------------------------------------------------
   # API Gateway
   # ----------------------------------------------------------
@@ -304,7 +376,7 @@ Resources:
       Name: !Sub '${ProjectName}-api'
       StageName: prod
       Cors:
-        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type'"
         AllowOrigin: "'*'"
 

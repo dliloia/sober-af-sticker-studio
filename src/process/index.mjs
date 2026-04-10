@@ -2,14 +2,28 @@
  * SoberAF Sticker Studio - Image Processing Lambda
  *
  * This function is triggered automatically when a new image lands in the
- * raw S3 bucket. It processes the image into multiple sticker-ready sizes,
- * adds a subtle watermark, optimizes file size, and stores the results
- * in the processed S3 bucket. It also updates the DynamoDB metadata.
+ * raw S3 bucket. It performs three jobs on every image:
+ *
+ *   1. Background removal — runs the raw PNG through @imgly/background-removal-node,
+ *      a U²-Net based ML model that produces a clean transparent cutout of
+ *      the subject regardless of what background the image generator put
+ *      behind it. This is the same model family as the Python `rembg` tool
+ *      and is the only reliable way to handle the variety of unwanted
+ *      backgrounds (drop shadows, dark circles, ground hatching, etc.) that
+ *      generative image models occasionally add even when transparency is
+ *      requested.
+ *
+ *   2. Multi-size resizing — produces small/medium/large print sizes at
+ *      300 DPI, matching common print-on-demand sticker dimensions.
+ *
+ *   3. Watermarking — adds a subtle "SoberAF" brand mark so gallery
+ *      previews aren't free to lift.
  */
 
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { removeBackground } from '@imgly/background-removal-node';
 import sharp from 'sharp';
 
 const s3 = new S3Client();
@@ -23,6 +37,15 @@ const STICKER_SIZES = [
   { name: 'medium', width: 900,  height: 900,  label: '3x3 inch' },
   { name: 'large',  width: 1200, height: 1200, label: '4x4 inch' },
 ];
+
+// Background-removal config passed to @imgly/background-removal-node.
+// "medium" is the sweet spot — it's the U²-Net base model that handles
+// arbitrary subjects and arbitrary backgrounds correctly, and it fits
+// comfortably in 1024 MB of Lambda memory.
+const BG_REMOVAL_CONFIG = {
+  model: 'medium',
+  output: { format: 'image/png', quality: 0.9 },
+};
 
 export const handler = async (event) => {
   console.log('Process Lambda invoked:', JSON.stringify(event));
@@ -47,11 +70,17 @@ export const handler = async (event) => {
     const imageBuffer = Buffer.from(await rawImage.Body.transformToByteArray());
     console.log('Raw image downloaded, size:', imageBuffer.length);
 
-    // Process the image into each sticker size
+    // STEP 1: Run the raw image through the background-removal model.
+    // Returns a clean transparent PNG of the subject with no shadows,
+    // ground, or other artifacts the image generator may have added.
+    const cleanedBuffer = await removeImageBackground(imageBuffer);
+    console.log('Background removed, size:', cleanedBuffer.length);
+
+    // STEP 2: Resize into each sticker size and add the watermark.
     const processedKeys = {};
 
     for (const size of STICKER_SIZES) {
-      const processedBuffer = await processImage(imageBuffer, size);
+      const processedBuffer = await processImage(cleanedBuffer, size);
 
       const processedKey = `${designId}/${size.name}.png`;
       await s3.send(new PutObjectCommand({
@@ -104,32 +133,60 @@ export const handler = async (event) => {
 };
 
 /**
- * Processes an image: resizes to the target dimensions, adds a subtle
- * watermark, and optimizes for quality/file size balance.
+ * Runs the raw generated image through the @imgly/background-removal-node
+ * U²-Net model and returns a clean transparent PNG of just the subject.
+ *
+ * This is the only background-handling step in the pipeline. No flood
+ * fill, no thresholds, no connected-components heuristics — the ML model
+ * handles everything, including subjects on top of opaque shadows or
+ * decorative backgrounds the image generator may have added.
+ *
+ * If the model fails for any reason, we fall back to passing the original
+ * image through unchanged so the rest of the pipeline still completes.
  */
-async function processImage(imageBuffer, size) {
-  // Create the watermark SVG — subtle "SoberAF" text in the bottom-right corner
+async function removeImageBackground(imageBuffer) {
+  try {
+    const blob = await removeBackground(imageBuffer, BG_REMOVAL_CONFIG);
+    const arrayBuffer = await blob.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (err) {
+    console.error('Background removal failed, falling back to raw image:', err);
+    return await sharp(imageBuffer).png({ compressionLevel: 9 }).toBuffer();
+  }
+}
+
+/**
+ * Resizes a die-cut sticker to the target dimensions and adds a subtle
+ * watermark in the bottom-right corner. Preserves the alpha channel so
+ * the transparent background survives through resizing and compositing.
+ */
+async function processImage(dieCutBuffer, size) {
+  // Create the watermark SVG — subtle "SoberAF" text in the bottom-right corner.
+  // Uses a dark semi-transparent fill so it reads against the white border
+  // (where it will usually land) without being obtrusive on colored artwork.
   const watermarkSvg = `
     <svg width="${size.width}" height="${size.height}">
       <style>
         .watermark {
-          fill: rgba(255, 255, 255, 0.4);
-          font-size: ${Math.round(size.width * 0.04)}px;
+          fill: rgba(0, 0, 0, 0.35);
+          font-size: ${Math.round(size.width * 0.035)}px;
           font-family: Arial, sans-serif;
           font-weight: bold;
         }
       </style>
-      <text x="${size.width - 10}" y="${size.height - 10}"
+      <text x="${size.width - 12}" y="${size.height - 12}"
             text-anchor="end" class="watermark">SoberAF</text>
     </svg>`;
 
   const watermarkBuffer = Buffer.from(watermarkSvg);
 
-  // Resize the image and composite the watermark
-  const processed = await sharp(imageBuffer)
+  // Resize preserving alpha, then composite the watermark on top.
+  // fit: 'contain' with a transparent background ensures the die-cut
+  // silhouette is preserved even if the image isn't perfectly square.
+  const processed = await sharp(dieCutBuffer)
     .resize(size.width, size.height, {
-      fit: 'cover',
-      position: 'centre',
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
     })
     .composite([{
       input: watermarkBuffer,
@@ -137,8 +194,7 @@ async function processImage(imageBuffer, size) {
       left: 0,
     }])
     .png({
-      quality: 90,
-      compressionLevel: 8,
+      compressionLevel: 9,
     })
     .toBuffer();
 
